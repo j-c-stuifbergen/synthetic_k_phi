@@ -74,20 +74,20 @@ Acknowledgements:
 The function "create_approximately_structured_single_variable" was written
 by Co Stuifbergen in JavaScript and translated to Python by HARBR.
 """
-
-
+import tkinter
 import numpy as np
 import math
 import random
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from mpl_toolkits.mplot3d import Axes3D
+
 from scipy.constants import g
 from scipy.linalg import eigh, cholesky
 from scipy.stats import norm
 from scipy import stats
 from sklearn.cluster import KMeans
-
 
 ###############################################################################
 #litholib = {10:('shale',      'saddlebrown', '--',0.92, 0.07, 0.14, 0.008, 1.5),
@@ -110,6 +110,8 @@ show_intermediate_plots = True  # show intermediate plots (True) or not (False)
 # peakwidth needs to be > 0. Larger number will give a wider peak
 peak_1 = (0.75, 0.75, 2.00, 0.2)
 peak_2 = (2.25, 2.25, 1.00, 0.3)
+#peak_3 = (2.00, 2.25, 1.00, 0.3)
+peaks = [peak_1, peak_2] #, peak_3]
 
 # if reproducible results are needed: use a specific seed number, otherwise 
 # comment out
@@ -119,18 +121,21 @@ seednumber = 1000
 
 # calculate the base of the interval using the sampling rate (might not coincide
 # with top_int + length_of_interval)
-bot_int = top_int + math.ceil(length_of_interval/sr)*sr
+arrayLen = math.ceil(length_of_interval/sr)
+bot_int = top_int + arrayLen*sr
 
 # min/max for probability map
 lbound = 0
-ubound = peak_2[0] + peak_2[1]
+ubound = 5
 
 
 # create df and add first column: TVDSS
 df = pd.DataFrame()
-df['TVDSS'] = np.linspace(top_int,bot_int,(bot_int-top_int)/sr)
+#df['TVDSS'] = np.linspace(top_int,bot_int,(bot_int-top_int)/sr)
+
+df['TVDSS'] = np.linspace(top_int,bot_int,arrayLen)
 n = len(df) # length of the array
-nbins = 100; # resolution of the probability distributions
+nbins = 1000; # resolution of the probability distributions
 
 
 def create_approximately_structured_single_variable(opt_plot_prob_map=True, opt_plot_dummy_var=True):
@@ -152,7 +157,7 @@ def create_approximately_structured_single_variable(opt_plot_prob_map=True, opt_
     Python by HARBR (30th December 2019)'''
      
 #    def probability_density(x,y,xoffset1,yoffset1,ampl1,peakwidth1,xoffset2,yoffset2,ampl2,peakwidth2,*xoffsetn,*yoffsetn,*ampln,*peakwidthn):
-    def probability_definition(x,y,peak_1,peak_2):
+    def probability_definition(x,peakList):
         '''Defines the "map" with probability density distributions
         x, y are the x and y data
         peak_1 and peak_2 are tuples containing 4 elements each:
@@ -162,26 +167,29 @@ def create_approximately_structured_single_variable(opt_plot_prob_map=True, opt_
         -- peakwidth defines the width of peak (peakwidth must be >0)
         N.B. max 4 peaks can be passed to this function!
         '''
-        result = 0
-        for i in range(1,3): # make large enough - nobody will attempt to create a probability map with 4 peaks... ;-)
-            xoffset = vars()['peak_'+str(i)][0]
-            yoffset = vars()['peak_'+str(i)][1]
-            ampl = vars()['peak_'+str(i)][2]
-            peakwidth = vars()['peak_'+str(i)][3]
-            r2 = math.pow(x-xoffset,2) + math.pow(y-yoffset,2)
-            result += ampl*math.exp(-r2/peakwidth)
-        return(result)
-        
+
+        def prob_out(y):
+            result = 0
+            for p in peaks: # make large enough - nobody will attempt to create a probability map with 4 peaks... ;-)
+                xoffset = p[0]
+                yoffset = p[1]
+                ampl = p[2]
+                peakwidth = p[3]
+                r2 = math.pow(x-xoffset,2) + math.pow(y-yoffset,2)
+                result += ampl*math.exp(-r2/peakwidth)
+            return(result)
+        return prob_out    
     
-    def bins(start,end,n,yi,peak_1,peak_2):
+    def bins(start,end,n,yi,peaks):
         '''Small function to set the number of bins at the "cross-section"
         @yi: the cumulative distribution curve is divided into n equal-sized bins.
         Note that the result is not normalised, i.e. y[n-1] is not 1.0 '''
+        probability = probability_definition(yi,peaks)
         width = (end-start)/n
         y = []
-        y.append(probability_definition(yi,start+0.5*width,peak_1,peak_2))
+        y.append(probability(start+0.5*width))
         for i in range(1,n):
-            y.append(y[i-1] + probability_definition(yi,(i+0.5)*width,peak_1,peak_2))
+            y.append(y[i-1] + probability((i+0.5)*width))
         return(y)   
     
     
@@ -195,7 +203,7 @@ def create_approximately_structured_single_variable(opt_plot_prob_map=True, opt_
 
     for i in range(n):
         # z = the binned cumulative probabilty at the specific value
-        z = bins(lbound,ubound,nbins,r,peak_1,peak_2)
+        z = bins(lbound,ubound,nbins,r,peaks)
         # small function to scale random value
         r = scaled_random(0,z[nbins-1])
     
@@ -205,8 +213,7 @@ def create_approximately_structured_single_variable(opt_plot_prob_map=True, opt_
             j = 1
             while(z[j]<r and j<nbins):
                 j += 1
-            
-        myresults.append(lbound+(j+(r-z[j-1])/(z[j]-z[j-1]))*(ubound-lbound)/nbins)
+            myresults.append(lbound+(j+(r-z[j-1])/(z[j]-z[j-1]))*(ubound-lbound)/nbins)
         r = myresults[i]
 
     # This part is only to visualize the probability map - not necessary for 
@@ -215,27 +222,53 @@ def create_approximately_structured_single_variable(opt_plot_prob_map=True, opt_
         # Create arrays for the probability map
         # N.B. the number of points in the isa reduced by a factor 10 to speed up
         # (it1's for visualization only anyway)
-        xprob = np.linspace(lbound,ubound,nbins/10) 
-        yprob = np.linspace(lbound,ubound,nbins/10)
-    
-        # create a meshgrid
-        xxprob,yyprob = np.meshgrid(xprob,yprob,sparse=True)
-        prob = np.zeros((len(xprob),len(yprob)))
+        nHor = 50
+        nVert = 50
+        xCoords = np.linspace(lbound,ubound,nHor) 
+        yCoords = np.linspace(lbound,ubound,nVert)
 
-        # calculate "z"-value
-        for i, X in zip(range(len(xprob)),xprob):
-            for j,Y in zip(range(len(xprob)),xprob):
-                prob[j,i]=probability_density(X,Y,peak_1, peak_2)
-        
+        # create a meshgrid
+        xxCoords,yyCoords = np.meshgrid(xCoords,yCoords,sparse=True)
+        prob = np.zeros((len(xCoords),len(yCoords)))
+        normed = np.zeros((len(xCoords),len(yCoords)))
+        x = np.zeros(len(xCoords))
+        zval = np.zeros(len(yCoords))
         # draw the probability density map
         fig = plt.figure(figsize=(6,6))
-        plt.pcolor(xxprob,yyprob,prob)
-        plt.colorbar().set_label('Probability density',fontsize=10,fontweight='bold')
-        plt.xlabel('x-prob',fontweight='bold')
-        plt.ylabel('y-prob',fontweight='bold')
-        plt.title('Probability density map',fontweight='bold')
-        plt.show()
-    
+        ax = fig.gca(projection='3d')
+        # ax = plt.axes(projection='3d')
+
+        # calculate "z"-value
+        for i, X in zip(range(len(xCoords)),yCoords):
+            probability = probability_definition(X,peaks)
+            sum = 0
+            for j,Y in zip(range(len(yCoords)),yCoords):
+                prob[j,i]=probability(Y)
+                sum += prob[j,i]
+            for j,Y in zip(range(len(yCoords)),yCoords):
+                normed[j,i] = prob[j,i]/sum
+                zval[j]   = normed[j,i]
+                x[j]=X
+        #    ax.plot3D(x, yCoords, zval,  label='probabilities')
+            
+
+        '''        plt.pcolor(xxCoords,yyprob,prob)
+                plt.colorbar().set_label('Probability density',fontsize=10,fontweight='bold')
+                plt.xlabel('x-prob',fontweight='bold')
+                plt.ylabel('y-prob',fontweight='bold')
+                plt.title('Probability density map',fontweight='bold')
+        '''
+        ax.plot_surface(xxCoords, yyCoords, prob, rstride=1, cstride=1,
+                cmap='viridis', edgecolor='none')
+        ax.set_title('functions');
+
+        fig = plt.figure(figsize=(6,6))
+        ax = fig.gca(projection='3d')
+        ax.plot_surface(xxCoords, yyCoords, normed, rstride=1, cstride=1,
+                cmap='viridis', edgecolor='none')
+        ax.set_title('probabilities');
+        # plt.show()
+        
     # convert results to pandas dataframe for easy plotting agains index
     myresults = pd.DataFrame(myresults,columns=['values'])
 
