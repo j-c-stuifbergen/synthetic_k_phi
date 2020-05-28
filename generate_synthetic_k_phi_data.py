@@ -35,7 +35,7 @@ The user needs to specify the following (in the "USER SETUP" section below):
        Is seems that "Cholesky" generally results in a little higher correlation
        coefficients on the final data tha "eigenvectors and eigenvalues"
 
-It also is possible to change the probability distribution map also. This is 
+It also is possible to change the probability definition map also. This is 
 somewhat trial and error, but the program works best when the peaks lie on a 
 diagonal. Adjust the variables "peak_1" and "peak_2" to change the probability
 distribution map. The variables "peak_n" are tuples containing the following 
@@ -71,7 +71,7 @@ Created December 2019
 @author: HARBR (Harry Brandsen)
 
 Acknowledgements:
-The function "create_approximately_structured_single_variable" was written
+The function "create_markov_series" was written
 by Co Stuifbergen in JavaScript and translated to Python by HARBR.
 """
 import tkinter
@@ -80,6 +80,8 @@ import math
 import random
 import pandas as pd
 import matplotlib.pyplot as plt
+from correlate import double_dummy_data,  correlate_doubled_dummy_data
+from markov_series import create_markov_series
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -101,21 +103,14 @@ top_int = 1950                  # top of interval
 length_of_interval = 150        # length of interval. NB: the interval will be 
                                 # extended to the next sample increment
 
-method = 'cholesky'             # method needs to be either 'cholesky' or 'eigh'
+# method = 'cholesky'             # method needs to be either 'cholesky' or 'eigh'
+method = 'eigh'             # method needs to be either 'cholesky' or 'eigh'
 
 show_intermediate_plots = True  # show intermediate plots (True) or not (False)
 
-# for probability map: positions, amplitude and width of peaks:
-# syntax: peak_n = tuple(xoffset, yoffset, amplitude, peakwidth)
-# peakwidth needs to be > 0. Larger number will give a wider peak
-peak_1 = (0.75, 0.75, 2.00, 0.2)
-peak_2 = (2.25, 2.25, 1.00, 0.3)
-#peak_3 = (2.00, 2.25, 1.00, 0.3)
-peaks = [peak_1, peak_2] #, peak_3]
-
 # if reproducible results are needed: use a specific seed number, otherwise 
 # comment out
-seednumber = 1000
+random.seed(1000) 
 #
 ###############################################################################
 
@@ -124,232 +119,10 @@ seednumber = 1000
 arrayLen = math.ceil(length_of_interval/sr)
 bot_int = top_int + arrayLen*sr
 
-# min/max for probability map
-lbound = 0
-ubound = 5
-
-
 # create df and add first column: TVDSS
 df = pd.DataFrame()
-#df['TVDSS'] = np.linspace(top_int,bot_int,(bot_int-top_int)/sr)
-
 df['TVDSS'] = np.linspace(top_int,bot_int,arrayLen)
 n = len(df) # length of the array
-nbins = 1000; # resolution of the probability distributions
-
-
-def create_approximately_structured_single_variable(opt_plot_prob_map=True, opt_plot_dummy_var=True):
-    '''This function creates an array with a single dummy variable that is 
-    "approximately sorted" (i.e. more structured than random) to resemble true 
-    geology better. The "approximate sortingis obtained by picking a random 
-    value based on a probability map defined by two normal distributions.
-    
-    The only arguments required are the variables that define a sum of gaussian
-    distributions on the probability map (function "probability_definition") and 
-    the length of the dummy data array (obtained automatically).
-    
-    -- The optional argument opt_plot_prob_map (default=True, otherwise False)
-       shows/not shows a visual representation of the probability map
-    -- The optional argument opt_plot_dummy_var (default=True, otherwise False)
-       shows/not shows the creates (approximately sorted) dummy variable
-     
-    This function was written by Co Stuifbergen in JavaScript, translated to
-    Python by HARBR (30th December 2019)'''
-     
-#    def probability_density(x,y,xoffset1,yoffset1,ampl1,peakwidth1,xoffset2,yoffset2,ampl2,peakwidth2,*xoffsetn,*yoffsetn,*ampln,*peakwidthn):
-    def probability_definition(x,peakList):
-        '''Defines the "map" with probability density distributions
-        x, y are the x and y data
-        peak_1 and peak_2 are tuples containing 4 elements each:
-        -- xoffset defines the x position of the probability peak
-        -- yoffset defines the y position of the probability peak
-        -- ampl defines the amplitude of peak (ampl must be >0)
-        -- peakwidth defines the width of peak (peakwidth must be >0)
-        N.B. max 4 peaks can be passed to this function!
-        '''
-
-        def prob_out(y):
-            result = 0
-            for p in peaks: # make large enough - nobody will attempt to create a probability map with 4 peaks... ;-)
-                xoffset = p[0]
-                yoffset = p[1]
-                ampl = p[2]
-                peakwidth = p[3]
-                r2 = math.pow(x-xoffset,2) + math.pow(y-yoffset,2)
-                result += ampl*math.exp(-r2/peakwidth)
-            return(result)
-        return prob_out    
-    
-    def bins(start,end,n,yi,peaks):
-        '''Small function to set the number of bins at the "cross-section"
-        @yi: the cumulative distribution curve is divided into n equal-sized bins.
-        Note that the result is not normalised, i.e. y[n-1] is not 1.0 '''
-        probability = probability_definition(yi,peaks)
-        width = (end-start)/n
-        y = []
-        y.append(probability(start+0.5*width))
-        for i in range(1,n):
-            y.append(y[i-1] + probability((i+0.5)*width))
-        return(y)   
-    
-    
-    def scaled_random(mymin,mymax):
-        '''Small function to scale the random value between lbound and ubound'''
-        return(mymin + random.random()*(mymax-mymin))
-     
-    
-    myresults = [] # create empty list to store results
-    r = scaled_random(lbound,ubound)
-
-    for i in range(n):
-        # z = the binned cumulative probabilty at the specific value
-        z = bins(lbound,ubound,nbins,r,peaks)
-        # small function to scale random value
-        r = scaled_random(0,z[nbins-1])
-    
-        if (r<z[0]):
-            myresults.append(lbound+(ubound-lbound)/nbins*(r/z[0]))
-        else:
-            j = 1
-            while(z[j]<r and j<nbins):
-                j += 1
-            myresults.append(lbound+(j+(r-z[j-1])/(z[j]-z[j-1]))*(ubound-lbound)/nbins)
-        r = myresults[i]
-
-    # This part is only to visualize the probability map - not necessary for 
-    # the program to function properly 
-    if opt_plot_prob_map == True:
-        # Create arrays for the probability map
-        # N.B. the number of points in the isa reduced by a factor 10 to speed up
-        # (it1's for visualization only anyway)
-        nHor = 50
-        nVert = 50
-        xCoords = np.linspace(lbound,ubound,nHor) 
-        yCoords = np.linspace(lbound,ubound,nVert)
-
-        # create a meshgrid
-        xxCoords,yyCoords = np.meshgrid(xCoords,yCoords,sparse=True)
-        prob = np.zeros((len(xCoords),len(yCoords)))
-        normed = np.zeros((len(xCoords),len(yCoords)))
-        x = np.zeros(len(xCoords))
-        zval = np.zeros(len(yCoords))
-        # draw the probability density map
-        fig = plt.figure(figsize=(6,6))
-        ax = fig.gca(projection='3d')
-        # ax = plt.axes(projection='3d')
-
-        # calculate "z"-value
-        for i, X in zip(range(len(xCoords)),yCoords):
-            probability = probability_definition(X,peaks)
-            sum = 0
-            for j,Y in zip(range(len(yCoords)),yCoords):
-                prob[j,i]=probability(Y)
-                sum += prob[j,i]
-            for j,Y in zip(range(len(yCoords)),yCoords):
-                normed[j,i] = prob[j,i]/sum
-                zval[j]   = normed[j,i]
-                x[j]=X
-        #    ax.plot3D(x, yCoords, zval,  label='probabilities')
-            
-
-        '''        plt.pcolor(xxCoords,yyprob,prob)
-                plt.colorbar().set_label('Probability density',fontsize=10,fontweight='bold')
-                plt.xlabel('x-prob',fontweight='bold')
-                plt.ylabel('y-prob',fontweight='bold')
-                plt.title('Probability density map',fontweight='bold')
-        '''
-        ax.plot_surface(xxCoords, yyCoords, prob, rstride=1, cstride=1,
-                cmap='viridis', edgecolor='none')
-        ax.set_title('functions');
-
-        fig = plt.figure(figsize=(6,6))
-        ax = fig.gca(projection='3d')
-        ax.plot_surface(xxCoords, yyCoords, normed, rstride=1, cstride=1,
-                cmap='viridis', edgecolor='none')
-        ax.set_title('probabilities');
-        # plt.show()
-        
-    # convert results to pandas dataframe for easy plotting agains index
-    myresults = pd.DataFrame(myresults,columns=['values'])
-
-    if opt_plot_dummy_var == True:
-        # show the created dummy variable
-        fig = plt.figure(figsize=(4,8))
-        plt.plot(myresults.values,myresults.index,'g-')
-        plt.gca().invert_yaxis()
-        plt.show()
-
-    return(myresults)
-
-
-
-def double_dummy_data(x,method):
-    '''This small function creates a 2 by n array to later use to generate 
-    correlated data. The upper row in this array is replaced by the earlier-
-    created "approximately sorted" data (the "x" argument). Depending on the
-    method chosen ("cholesky" or "eigh"), the upper resp. lower row needs to
-    be replaced (this is the row that remains the same during the matrix 
-    transformation)'''
-    # generate a 2 by n array with random data
-    xy = norm.rvs(size=(2, len(x)))
-    
-    # depending on the method, either row 0 or row 1 needs to be replaced by the 
-    # "approximately sorted data
-    if method == 'cholesky':
-        row = 0
-    elif method == 'eigh':
-        row = 1
-    
-    cntr = 0
-    for i in x.index:
-        xy[row,cntr] = x.loc[i,:].values[0]
-        cntr += 1
-    return(xy)
-
-
-
-def correlate_doubled_dummy_data(xy,method,corr):
-    '''Creates aset of two correlated variables. The user can indicate:
-    -- xy is the 2 by n array of dummy data in which the upper row is the
-       "approximately sorted" dummy data
-    -- the method = "cholesky" or "eigh",
-    -- the correlation coefficient r
-    
-    See https://scipy-cookbook.readthedocs.io/items/CorrelatedRandomSamples.html
-    for details.'''
-            
-    # The desired covariance matrix.
-    if corr > 1 or corr < -1:
-        print('The correlation coefficient must be between -1 and 1 incl.')
-        return
-    
-    r = np.array([
-            [  1, corr],
-            [ corr,  1]])
-    
-    # Generate samples from three independent normally distributed random
-    # variables (with mean 0 and std. dev. 1).
-#    x = norm.rvs(size=(2, n))
-    
-    # We need a matrix `c` for which `c*c^T = r`.  We can use, for example,
-    # the Cholesky decomposition, or the we can construct `c` from the
-    # eigenvectors and eigenvalues.
-    if method == 'cholesky':
-        # Compute the Cholesky decomposition.
-        c = cholesky(r, lower=True)
-    elif method == 'eigh':
-        # Compute the eigenvalues and eigenvectors.
-        evals, evecs = eigh(r)
-        # Construct c, so c*c^T = r.
-        c = np.dot(evecs, np.diag(np.sqrt(evals)))
-    else:
-        print('Invalid method entered...!')
-        return
-    
-    # Convert the data to correlated random variables. 
-    return(np.dot(c, xy))
-
-
 
 def rescale_k_phi_from_correlated_doubled_dummy_data(correlated_doubled_dummy_data,title, por_5th, por_95th, k_5th, k_95th, show_x_plots=True, plot_col='green'):
     '''Rescales the correlated dummy data. Takes dummary data (a 2 by n float-array)
@@ -439,8 +212,8 @@ else:
     opt_plot_dummy_var=False
     show_x_plots = False
 
-random.seed(seednumber) 
-x = create_approximately_structured_single_variable(opt_plot_prob_map=opt_plot_prob_map, opt_plot_dummy_var=opt_plot_dummy_var)
+# x = create_markov_series(n, opt_plot_prob_map=opt_plot_prob_map, opt_plot_dummy_var=opt_plot_dummy_var)
+x = create_markov_series(n, opt_plot_prob_map=True, opt_plot_dummy_var=True)
 # STUPID FIX FOR BUG NOT UNDERSTOOD: trim length to be sure it is identical to df
 #x = x[0:len(df)]
 
@@ -453,7 +226,7 @@ x = create_approximately_structured_single_variable(opt_plot_prob_map=opt_plot_p
 # be added later 
 corr=0.99   # start off with a high correlation coefficient. Do not make it equal
             # to 1 (then "eigh" method will crash)
-xy = double_dummy_data(x,method)
+xy = double_dummy_data(x)
 xy = correlate_doubled_dummy_data(xy,method,corr)
 xy = pd.DataFrame(xy.transpose())
 
@@ -479,7 +252,7 @@ for key in litholib.keys(): # loop through all rocktypes
     # pick up user-set values for this PRT 
     rt, corr, lpor, hpor, lk, hk, plot_col = litholib[key][0], litholib[key][3], litholib[key][4], litholib[key][5], litholib[key][6], litholib[key][7], litholib[key][1]
     # create a 2 by n sized array with random, normally distributed data
-    vars()['xy_'+rt] = double_dummy_data(x,method)
+    vars()['xy_'+rt] = double_dummy_data(x)
     # replace one row with the approximately structured data
     vars()['xy_'+rt] = correlate_doubled_dummy_data(vars()['xy_'+rt],method,corr)
     # transpose the results (so result is 2 columns instead of 2 rows)
