@@ -33,6 +33,8 @@ import numpy as np
 import math
 import random
 import matplotlib.pyplot as plt
+from matplotlib import colors
+
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -102,12 +104,12 @@ def create_markov_series(n=100, nbins = 100, opt_plot_prob_map=True, opt_plot_du
         '''Small function to set the number of bins at the "cross-section"
         @yi: the cumulative distribution curve is divided into n equal-sized bins.
         Note that the result is not normalised, i.e. y[n-1] is not 1.0 '''
-        probability = probability_definition(yi)
+        probaSelected = probability_definition(yi)
         width = (end-start)/n
         y = []
-        y.append(probability(start+0.5*width))
+        y.append(probaSelected(start+0.5*width))
         for i in range(1,n):
-            y.append(y[i-1] + probability((i+0.5)*width))
+            y.append(y[i-1] + probaSelected((i+0.5)*width))
         return(y)   
     
     
@@ -140,60 +142,65 @@ def create_markov_series(n=100, nbins = 100, opt_plot_prob_map=True, opt_plot_du
         # Create arrays for the probability map
         # N.B. the number of points in the isa reduced by a factor 10 to speed up
         # (it's for visualization only anyway)
-        nHor = 50
-        nVert = 50
-        xCoords = np.linspace(lbound,ubound,nHor) 
-        yCoords = np.linspace(lbound,ubound,nVert)
+        nX = 50
+        nY = 50
+        xCoords = np.linspace(lbound,ubound,nX) 
+        yCoords = np.linspace(lbound,ubound,nY)
 
         # create a meshgrid
         xxCoords,yyCoords = np.meshgrid(xCoords,yCoords,sparse=True)
-        prob = np.zeros((len(xCoords),len(yCoords)))
-        normed = np.zeros((len(xCoords),len(yCoords)))
+        probDefiner = np.zeros((len(xCoords),len(yCoords)))
+        # normed = np.zeros((len(xCoords),len(yCoords)))
         x = np.zeros(len(xCoords))
-        zval = np.zeros(len(yCoords))
+
+        figB = plt.figure(figsize=(6,6))
+        bx = figB.gca(projection='3d')
+        bx.set_title('probabilities');
+        # create a mapping to the interval [0,1].
+        # I don't want to use the extreme colors
+        cn = colors.Normalize(-nX*0.3, len(xCoords)*1.5)
+        # plt.set_cmap("inferno") # there should be a way to set the color map 
+
+        # calculate "z"-value
+        for i in range(len(xCoords)):
+            probaSelected = probability_definition(xCoords[i])
+            sum = 0
+            zval = np.zeros(len(yCoords))
+            for j in range(len(yCoords)):
+                probDefiner[j,i]=probaSelected(yCoords[j])
+                sum += probDefiner[j,i]
+            for j in range(len(yCoords)):
+                zval[j]   = probDefiner[j,i]/sum
+                # normed[j,i] = zval[j]
+            x= [xCoords[i]] * nY
+            bx.plot(x,yCoords,zval, color = plt.cm.jet(cn(i)))
+        #    ax.plot3D(x, yCoords, zval,  label='probabilities')
+            
         # draw the probability density map
         fig = plt.figure(figsize=(6,6))
         ax = fig.gca(projection='3d')
         # ax = plt.axes(projection='3d')
-
-        # calculate "z"-value
-        for i, X in zip(range(len(xCoords)),yCoords):
-            probability = probability_definition(X)
-            sum = 0
-            for j,Y in zip(range(len(yCoords)),yCoords):
-                prob[j,i]=probability(Y)
-                sum += prob[j,i]
-            for j,Y in zip(range(len(yCoords)),yCoords):
-                normed[j,i] = prob[j,i]/sum
-                zval[j]   = normed[j,i]
-                x[j]=X
-        #    ax.plot3D(x, yCoords, zval,  label='probabilities')
-            
-
-        '''        plt.pcolor(xxCoords,yyprob,prob)
-                plt.colorbar().set_label('Probability density',fontsize=10,fontweight='bold')
-                plt.xlabel('x-prob',fontweight='bold')
-                plt.ylabel('y-prob',fontweight='bold')
-                plt.title('Probability density map',fontweight='bold')
-        '''
-        ax.plot_surface(xxCoords, yyCoords, prob, rstride=1, cstride=1,
+        ax.plot_surface(xxCoords, yyCoords, probDefiner, rstride=1, cstride=1,
                 cmap='viridis', edgecolor='none')
         ax.set_title('defining functions');
 
+        '''
         fig = plt.figure(figsize=(6,6))
         ax = fig.gca(projection='3d')
         ax.plot_surface(xxCoords, yyCoords, normed, rstride=1, cstride=1,
                 cmap='viridis', edgecolor='none')
         ax.set_title('probabilities');
-        # plt.show()
+        '''
         
     # convert results to pandas dataframe for easy plotting agains index
 
-    if opt_plot_dummy_var == True:
+    if opt_plot_dummy_var : 
         # show the created dummy variable
         fig = plt.figure(figsize=(4,8))
         plt.plot(myresults,range(len(myresults)),'g-')
         plt.gca().invert_yaxis()
+        
+    if opt_plot_prob_map or opt_plot_dummy_var : 
         plt.show()
 
     return(myresults)
